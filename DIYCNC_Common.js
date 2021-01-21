@@ -441,6 +441,8 @@ var cutterOnCurrentPower;
 
 function onSection() {
 
+  nextCutIsRapid = false;
+  
   // Write Start gcode of the documment (after the "onParameters" with the global info)
   if (isFirstSection()) {
     writeFirstSection();
