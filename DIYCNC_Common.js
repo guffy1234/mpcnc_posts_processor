@@ -6,11 +6,21 @@ MPCNC posts processor for milling and laser/plasma cutting.
 
 */
 
+travelModes =
+{
+  Autodetect: 0 ,
+  UseOnRapid: 1,
+  Workaround: 2,
+};
 
 // user-defined properties
 properties = {
+  jobTravelMode: 0,                 // Rapid handling 
+
   jobTravelSpeedXY: 2500,              // High speed for travel movements X & Y (mm/min)
   jobTravelSpeedZ: 300,                // High speed for travel movements Z (mm/min)
+
+  jobLimitSpeedZ: true,                // High speed for travel movements Z (mm/min)
 
   jobManualSpindlePowerControl: true,   // Spindle motor is controlled by manual switch 
 
@@ -66,6 +76,15 @@ propertyDefinitions = {
       { title: "RepRap firmware (Duet)", id: 2 },
     ]
   },
+  jobTravelMode: {
+    title: "Job: Travel mode", description: "How to handle rapids", group: 1,
+    type: "integer", default_mm: 0, default_in: 0,
+    values: [
+      { title: "Autodetect", id: travelModes.Autodetect },
+      { title: "UseOnRapid", id: travelModes.UseOnRapid },
+      { title: "Workaround", id: travelModes.Workaround },
+    ]
+  },
 
   jobTravelSpeedXY: {
     title: "Job: Travel speed X/Y", description: "High speed for travel movements X & Y (mm/min; in/min)", group: 1,
@@ -75,6 +94,12 @@ propertyDefinitions = {
     title: "Job: Travel Speed Z", description: "High speed for travel movements z (mm/min; in/min)", group: 1,
     type: "spatial", default_mm: 300, default_in: 12
   },
+
+  jobLimitSpeedZ: {
+    title: "Job: Limit Speed Z", description: "Adjust feedrate to not over max travel speed by Z", group: 1,
+    type: "boolean", default_mm: true, default_in: true
+  },
+
 
   jobManualSpindlePowerControl: {
     title: "Job: Manual Spindle On/Off", description: "Set Yes when your spindle motor is controlled by manual switch", group: 1,
@@ -379,9 +404,14 @@ FirmwareBase.prototype.section = function () {
 
 var currentFirmware;
 
+var currentTravelMode;
+
+
 // Called in every new gcode file
 function onOpen() {
   currentFirmware.init();
+
+  currentTravelMode = properties.jobTravelMode;
 
   sequenceNumber = properties.jobSequenceNumberStart;
   if (!properties.jobSeparateWordsWithSpace) {
@@ -502,7 +532,20 @@ function onRapid(x, y, z) {
 
 // Feed movements
 function onLinear(x, y, z, feed) {
-  linearMovements(x, y, z, feed);
+  if(currentTravelMode == travelModes.Workaround && lastMovement == MOVEMENT_CUTTING)
+  {
+    if(nextCutIsRapid)
+    {
+      writeMovementComment("Workaround: OnLinear as rapid");
+      rapidMovements(x, y, z);
+    }
+    else
+    {
+      linearMovements(x, y, z, feed);
+    }
+  } else {
+    linearMovements(x, y, z, feed);
+  }
 }
 
 function onRapid5D(_x, _y, _z, _a, _b, _c) {
@@ -566,65 +609,104 @@ function onParameter(name, value) {
   if (name == "operation-comment") sectionComment = value;
 }
 
+var nextCutIsRapid = false;
+var lastMovement;
+
 function onMovement(movement) {
-  if (properties.commentMovements) {
-    var jet = tool.isJetTool && tool.isJetTool();
-    var id;
-    switch (movement) {
-      case MOVEMENT_RAPID:
-        id = "MOVEMENT_RAPID";
-        break;
-      case MOVEMENT_LEAD_IN:
-        id = "MOVEMENT_LEAD_IN";
-        break;
-      case MOVEMENT_CUTTING:
-        id = "MOVEMENT_CUTTING";
-        break;
-      case MOVEMENT_LEAD_OUT:
-        id = "MOVEMENT_LEAD_OUT";
-        break;
-      case MOVEMENT_LINK_TRANSITION:
-        id = jet ? "MOVEMENT_BRIDGING" : "MOVEMENT_LINK_TRANSITION";
-        break;
-      case MOVEMENT_LINK_DIRECT:
-        id = "MOVEMENT_LINK_DIRECT";
-        break;
-      case MOVEMENT_RAMP_HELIX:
-        id = jet ? "MOVEMENT_PIERCE_CIRCULAR" : "MOVEMENT_RAMP_HELIX";
-        break;
-      case MOVEMENT_RAMP_PROFILE:
-        id = jet ? "MOVEMENT_PIERCE_PROFILE" : "MOVEMENT_RAMP_PROFILE";
-        break;
-      case MOVEMENT_RAMP_ZIG_ZAG:
-        id = jet ? "MOVEMENT_PIERCE_LINEAR" : "MOVEMENT_RAMP_ZIG_ZAG";
-        break;
-      case MOVEMENT_RAMP:
-        id = "MOVEMENT_RAMP";
-        break;
-      case MOVEMENT_PLUNGE:
-        id = jet ? "MOVEMENT_PIERCE" : "MOVEMENT_PLUNGE";
-        break;
-      case MOVEMENT_PREDRILL:
-        id = "MOVEMENT_PREDRILL";
-        break;
-      case MOVEMENT_EXTENDED:
-        id = "MOVEMENT_EXTENDED";
-        break;
-      case MOVEMENT_REDUCED:
-        id = "MOVEMENT_REDUCED";
-        break;
-      case MOVEMENT_HIGH_FEED:
-        id = "MOVEMENT_HIGH_FEED";
-        break;
-      case MOVEMENT_FINISH_CUTTING:
-        id = "MOVEMENT_FINISH_CUTTING";
-        break;
-    }
-    if (id == undefined) {
-      id = String(movement);
-    }
-    writeComment(" " + id);
+  var jet = tool.isJetTool && tool.isJetTool();
+  var id;
+
+  var goingToCut = false;
+  var gointToTravel = false;
+   
+  switch (movement) {
+    case MOVEMENT_RAPID:
+      id = "MOVEMENT_RAPID";
+      if (currentTravelMode == travelModes.Autodetect) {
+        currentTravelMode = travelModes.UseOnRapid;
+        writeMovementComment("Detected travel mode UseOnRapid");
+      }
+      break;
+    case MOVEMENT_LEAD_IN:
+      id = "MOVEMENT_LEAD_IN";
+      goingToCut = true;
+      break;
+    case MOVEMENT_CUTTING:
+      id = "MOVEMENT_CUTTING";
+      if (currentTravelMode == travelModes.Autodetect) {
+        currentTravelMode = travelModes.Workaround;
+        writeMovementComment("Detected travel mode Workaround");
+      }
+      break;
+    case MOVEMENT_LEAD_OUT:
+      id = "MOVEMENT_LEAD_OUT";
+      gointToTravel = true;
+      break;
+    case MOVEMENT_LINK_TRANSITION:
+      id = jet ? "MOVEMENT_BRIDGING" : "MOVEMENT_LINK_TRANSITION";
+      break;
+    case MOVEMENT_LINK_DIRECT:
+      id = "MOVEMENT_LINK_DIRECT";
+      break;
+    case MOVEMENT_RAMP_HELIX:
+      id = jet ? "MOVEMENT_PIERCE_CIRCULAR" : "MOVEMENT_RAMP_HELIX";
+      goingToCut = true;
+      break;
+    case MOVEMENT_RAMP_PROFILE:
+      id = jet ? "MOVEMENT_PIERCE_PROFILE" : "MOVEMENT_RAMP_PROFILE";
+      goingToCut = true;
+      break;
+    case MOVEMENT_RAMP_ZIG_ZAG:
+      id = jet ? "MOVEMENT_PIERCE_LINEAR" : "MOVEMENT_RAMP_ZIG_ZAG";
+      goingToCut = true;
+      break;
+    case MOVEMENT_RAMP:
+      id = "MOVEMENT_RAMP";
+      goingToCut = true;
+      break;
+    case MOVEMENT_PLUNGE:
+      id = jet ? "MOVEMENT_PIERCE" : "MOVEMENT_PLUNGE";
+      goingToCut = true;
+      break;
+    case MOVEMENT_PREDRILL:
+      id = "MOVEMENT_PREDRILL";
+      goingToCut = true;
+      break;
+    case MOVEMENT_EXTENDED:
+      id = "MOVEMENT_EXTENDED";
+      break;
+    case MOVEMENT_REDUCED:
+      id = "MOVEMENT_REDUCED";
+      break;
+    case MOVEMENT_HIGH_FEED:
+      id = "MOVEMENT_HIGH_FEED";
+      break;
+    case MOVEMENT_FINISH_CUTTING:
+      goingToCut = true;
+      id = "MOVEMENT_FINISH_CUTTING";
+      break;
   }
+  if (id == undefined) {
+    id = String(movement);
+  }
+  writeMovementComment(" " + id + " " + currentTravelMode + " " + goingToCut + " " + gointToTravel);
+
+  if (currentTravelMode == travelModes.Autodetect && goingToCut) {
+    currentTravelMode = travelModes.Workaround;
+    writeMovementComment("Detected travel mode Workaround");
+  }
+
+  if (currentTravelMode == travelModes.Workaround) {
+    if (goingToCut && nextCutIsRapid) {
+      writeMovementComment("Workaround: Going to NonRapid");
+      nextCutIsRapid = false;
+    } else if (gointToTravel && !nextCutIsRapid) {
+      writeMovementComment("Workaround: Going to Rapid");
+      nextCutIsRapid = true;
+    }
+  }
+
+  lastMovement = movement;
 }
 
 var currentSpindleSpeed = 0;
@@ -773,6 +855,12 @@ function writeComment(text) {
   currentFirmware.comment(text);
 }
 
+function writeMovementComment(text) {
+  if (properties.commentMovements) {
+    writeComment(text);
+  }
+}
+
 // Rapid movements with G1 and differentiated travel speeds for XY and Z
 function rapidMovementsXY(_x, _y) {
   var x = xOutput.format(_x);
@@ -803,6 +891,24 @@ function rapidMovements(_x, _y, _z) {
   rapidMovementsXY(_x, _y);
 }
 
+function adjustFeedrate(_x, _y, _z, _feed) {
+  var cp = getCurrentPosition();
+  if (cp.z == _z) {
+    return _feed;
+  }
+  var np = new Vector(_x, _y, _z);
+  var d = Vector.getDistance(cp, np);
+  var t = d / _feed;
+  var _zfeed = Math.abs(cp.z - _z) / t;
+  if (_zfeed <= properties.jobTravelSpeedZ) {
+    return _feed;
+  } 
+  var k = properties.jobTravelSpeedZ / _zfeed;
+  var newfeed = _zfeed * k;
+  //writeComment("Adjust " + _feed + " " + _zfeed + " " + newfeed + " " + d +" "+ cp.toString() +" "+ np.toString());
+  return newfeed;
+}
+
 // Linear movements
 function linearMovements(_x, _y, _z, _feed) {
   if (pendingRadiusCompensation != RADIUS_COMPENSATION_OFF) {
@@ -810,9 +916,15 @@ function linearMovements(_x, _y, _z, _feed) {
     xOutput.reset();
     yOutput.reset();
   }  
+
+  if (properties.jobLimitSpeedZ) {
+    _feed = adjustFeedrate(_x, _y, _z, _feed);
+  }
+ 
   var x = xOutput.format(_x);
   var y = yOutput.format(_y);
   var z = zOutput.format(_z);
+
   var f = fOutput.format(_feed);
   if (x || y || z) {
     if (pendingRadiusCompensation != RADIUS_COMPENSATION_OFF) {
