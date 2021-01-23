@@ -447,7 +447,7 @@ function onClose() {
   if (properties.gcodeStopFile == "") {
     onCommand(COMMAND_COOLANT_OFF);
     if (properties.jobGoOriginOnFinish) {
-      rapidMovementsXY(0, 0, false);
+      rapidMovementsXY(0, 0);
     }
     onCommand(COMMAND_STOP_SPINDLE);
     currentFirmware.end();
