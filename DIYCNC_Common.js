@@ -442,7 +442,7 @@ var cutterOnCurrentPower;
 function onSection() {
 
   nextCutIsRapid = false;
-  
+
   // Write Start gcode of the documment (after the "onParameters" with the global info)
   if (isFirstSection()) {
     writeFirstSection();
@@ -906,7 +906,7 @@ function adjustFeedrate(_x, _y, _z, _feed) {
     return _feed;
   } 
   var k = properties.jobTravelSpeedZ / _zfeed;
-  var newfeed = _zfeed * k;
+  var newfeed = _feed * k;
   //writeComment("Adjust " + _feed + " " + _zfeed + " " + newfeed + " " + d +" "+ cp.toString() +" "+ np.toString());
   return newfeed;
 }
