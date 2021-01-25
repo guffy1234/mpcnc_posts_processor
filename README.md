@@ -13,8 +13,8 @@ Supported firmwares:
 
 Some design points:
 - Setup operation types: Milling, Water/Laser/Plasma
-- Support MM and Inches units (**but all properties MUST be set in MM**)
-- XY and Z independent travel speeds. Rapids are done with G0.
+- Support mm and Inches units (**but all properties MUST be set in MM**)
+- Rapids movements use seperate G0 moves, first to move in Z and then to move inXY. Moves use independent travel speeds for XY and Z.
 - Arcs support on XY plane (Marlin/Repetier/RepRap) or all panes (Grbl)
 - Tested with LCD display and SD card (built in tool change require printing from SD and LCD to restart)
 - Support for 3 different laser power using "cutting modes" (through, etch, vaporize)
@@ -27,38 +27,78 @@ Some design points:
 
 # User Properties
 
-## Group 1: Job propertyes
+## Group 1: Job Properties
+Use these properties to control overall aspects of the job.
 
 |Title|Description|Default|
 |---|---|---|
-Job: Firmware|Target firmware (marlin 2.0 or Repetir 1.0.3 / GRBL 1.1) / RepRap Firmware.|**Marlin**|
-Job: Travel Speed XY|High speed for travel movements X & Y (mm/min).|**2500 mm/min**|
-Job: Travel Speed Z|High speed for travel movements Z (mm/min).|**300 mm/min**|
-Job: Marlin: Manual Spindle On/Off|Set it to true when the motor of your spindle is controlled by manual switch. So the preprocessor will issue additional pauses for TURN ON/TURN OFF the motor.|**true**|
-Job: Marlin: Enforce feedrate|Add feedrate to each movement g-code.|**false**|
-Job: Use Arcs|Use G2/G3 g-codes fo circular movements.|**true**|
-Job: Reset on start (G92)|Set origin when gcode start (G92 X0 Y0 Z0). Only apply if not using gcodeStartFile.|**true**|
-Job: Goto 0 at end|Go X0 Y0 at gcode end. Useful to find if your machine loss steeps or have any other mechanic issue (like loose pulleys). Also useful for repetitive jobs. Only apply if not using gcodeStopFile.|**true**|
-Job: Use Arcs|Use G2/G3 g-codes fo circular movements.|**true**|
-Job: Line numbers|Show sequence numbers.|**false**|
-Job: Line start|First sequence number.|**10**|
-Job: Line increment|Increment for sequence numbers.|**1**|
-Job: Separate words|Specifies that the words should be separated with a white space.|**true**|
 Job: Duet: Milling Mode|GCode command to setup Duet3d milling mode.|**"M453 P2 I0 R30000 F200"**|
 Job: Duet: Laser Mode|GCode command to setup Duet3d laser mode.|**"M452 P2 I0 R255 F200"**|
+Job: Goto 0 at end|Go X0 Y0 at gcode end. Useful to find if your machine loss steeps or have any other mechanic issue (like loose pulleys). Also useful for repetitive jobs. Only apply if not using gcodeStopFile.|**true**|
+Job: Marlin: Manual Spindle On/Off|Set it to true when the motor of your spindle is controlled by manual switch. So the preprocessor will issue additional pauses for TURN ON/TURN OFF the motor.|**true**|
+Job: Marlin: Enforce feedrate|Add feedrate to each movement g-code.|**false**|
+Job: Separate words|Specifies that the words should be separated with a white space.|**true**|
+Job: Line increment|Increment for sequence numbers.|**1**|
+Job: Line start|First sequence number.|**10**|
+Job: Line numbers|Show sequence numbers.|**false**|
+Job: Reset on start (G92)|Set origin when gcode start (G92 X0 Y0 Z0). Only apply if not using
+GcodeStartFile.|**true**|
+Job: Use Arcs|Use G2/G3 g-codes for circular movements.|**true**|
 
-## Group 2: Tool change
+Job: Firmware|Target firmware (marlin 2.0 or Repetir 1.0.3 / GRBL 1.1) / RepRap Firmware.|**Marlin**|
+
+## Group 2: Feedrate Scaling
+Use thes properties to scale the feedrate. Scaling will only occur if [Feed:Scaled feedrate] is true.
+
+Scaling ensures that no G1 cut exceeds the speed capablities of the X, Y, or Z axes.
+The cut's toolpath feedrate is projected onto the X, Y and Z axes. In turn each axis is tested
+to see if its cut speed is within the limits of that axis. If not, then all axes feedrates are
+scaled proportionatly to bring it within limits. This is repeated for all axes. The three axis
+feedrates are then merged to create a new toolpath feedrate which is then limited to ensure it
+doesn't exceed [Feed: Max toolpath speed].
+
+Note: Because scaling considered 3 dimensional movement a resulting toolpath's feedrate may be
+greater then the X, Y or Z limits. Consider a small movement in Z compared to much larger XY
+movements. This will produce a toolpath feedrate that appears to exceed the limits of Z but in
+reality this is appropriate because Z is traveling a much shorter distance then XY for the same
+period of time.
 
 |Title|Description|Default|
 |---|---|---|
+Feed: Travel Speed X/Y|High speed for travel movements X & Y (mm/min).|**2500 mm/min**|
+Feed: Travel Speed Z|High speed for travel movements Z (mm/min).|**300 mm/min**|
+Feed: Scaled feedrate|Scale cut feedrates to respect XY and Z max cut speeds.|**false**|
+Feed: Max cut speed X or Y|Maximum cut speed along the X or Y axes (mm/min).|**900 mm/min**|
+Feed: Max cut speed Z|Maximum cut speed along the Z axis (mm/min).|**180 mm/min**|
+Feed: Max toolpath speed|Maximum cut speed along the toolpath (mm/min).|**10000 mm/min**|
+
+# Group 3: Map G1->G0
+
+Performs two actions by allowing G1 cuts to be mapped to G0 Rapid movements.
+
+1. Resolves the loss of the initial positioning movement at the beginning of a cut toolpath (often identified in forums as the tool being initially dragged across the work surface).
+
+2. Allows G1 XY cut movements that occur at a height >= [Feed: Safe Z for Rapids] to be converted to
+Rapids. If [Feed: Allow Rapid Z] is true then it also converts G1 Z cut movements that either move upwards and end above the Safe Z, or move downwards with the start and end positions both above Safe Z. 
+
+|Title|Description|Default|
+|---|---|---|
+Feed: G1 -> G0|Allow G1 cuts to be converted to Rapid G0 moves when safe and appropriate.|**false**|
+Feed: Safe Z for Rapids|A G1 cut's Z must be >= to this to be mapped to a Rapid G0.|**10**|
+Feed: Allow Rapid Z|Include vertical cut if they are safe.|**true**|
+
+## Group 4: Tool change
+
+|Title|Description|Default|
+|---|---|---|
+Change: Disable Z stepper|Disable Z stepper when change a tool|**false**|
 Change: Enabled|Enable tool change code (bultin tool change requires LCD display)|**true**|
 Change: X|X position for builtin tool change|**0**|
 Change: Y|Y position for builtin tool change|**0**|
 Change: Z|Z position for builtin tool change|**40**|
 Change: Make Z Probe|Z probe after tool change|**true**|
-Change: Disable Z stepper|Disable Z stepper when change a tool|**false**|
-  
-## Group 3: Z Probe
+
+## Group 5: Z Probe
 
 |Title|Description|Default|
 |---|---|---|
@@ -68,7 +108,7 @@ Probe: Use Home Z|Use G28 or G38 for probing|**true**|
 Probe: G38 target|Probing up to Z position|**-10**|
 Probe: G38 speed|Probing with speed|**30**|
 
-## Group 4: Laser/Plasma related
+## Group 6: Laser/Plasma related
 
 |Title|Description|Default|Values|
 |---|---|---|---|
@@ -79,17 +119,7 @@ Laser: Marlin mode|Marlin mode of the laser/plasma cutter ()|**M106**|M106 S{PWM
 Laser: Marlin pin|Marlin custom pin number for the laser/plasma cutter|**4**||
 Laser: GRBL mode|GRBL mode of the laser/plasma cutter|**M4**|M4 S{PWM}/M5 dynamic power = 4; M3 S{PWM}/M5 static power = 3;|
 
-## Group 5: Override behaviour by external files
-
-|Title|Description|Default|
-|---|---|---|
-Extern: Start File|File with custom Gcode for header/start (in nc folder)||
-Extern: Stop File|File with custom Gcode for footer/end (in nc folder)||
-Extern: Tool File|File with custom Gcode for tool change (in nc folder)||
-Extern: Probe File|File with custom Gcode for tool probe (in nc folder)||
-
-
-## Group 6: Manage coolant control pins
+## Group 7: Manage coolant control pins
 
 |Title|Description|Default|Values|
 |---|---|---|---|
@@ -102,7 +132,16 @@ Coolant: B Marlin On command|GCode command to turn on Coolant channel B|**M42 P6
 Coolant: B Marlin Off command|Gcode command to turn off Coolant channel B|**M42 P6 S0**||
 Coolant: B GRBL|GRBL g-codes for control Coolant channel B|**M8**|M7 flood = 7; M8 mist = 8|
 
-## Group 7: Write comments into g-code
+## Group 8: Override behaviour by external files
+
+|Title|Description|Default|
+|---|---|---|
+Extern: Start File|File with custom Gcode for header/start (in nc folder)||
+Extern: Stop File|File with custom Gcode for footer/end (in nc folder)||
+Extern: Tool File|File with custom Gcode for tool change (in nc folder)||
+Extern: Probe File|File with custom Gcode for tool probe (in nc folder)||
+
+## Group 9: Write comments into g-code
 
 |Title|Description|Default|
 |---|---|---|
