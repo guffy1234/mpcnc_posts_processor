@@ -949,27 +949,27 @@ Firmware3dPrinterLike.prototype.spindleOff = function () {
 }
 Firmware3dPrinterLike.prototype.laserOn = function (power) {
   var laser_pwm = power / 100 * 255;
-  switch (properties.cutterMarlinMode) {
-    case 106:
+  switch (properties.cutterMarlinMode.toString()) {
+    case "106":
       writeBlock(mFormat.format(106), sFormat.format(laser_pwm));
       break;
-    case 3:
+    case "3":
       writeBlock(mFormat.format(3), oFormat.format(laser_pwm));
       break;
-    case 42:
+    case "42":
       writeBlock(mFormat.format(42), pFormat.format(properties.cutterMarlinPin), sFormat.format(laser_pwm));
       break;
   }
 }
 Firmware3dPrinterLike.prototype.laserOff = function () {
-  switch (properties.cutterMarlinMode) {
-    case 106:
+  switch (properties.cutterMarlinMode.toString()) {
+    case "106":
       writeBlock(mFormat.format(107));
       break;
-    case 3:
+    case "3":
       writeBlock(mFormat.format(5));
       break;
-    case 42:
+    case "42":
       writeBlock(mFormat.format(42), pFormat.format(properties.cutterMarlinPin), sFormat.format(0));
       break;
   }
